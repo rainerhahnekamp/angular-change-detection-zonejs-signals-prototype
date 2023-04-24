@@ -1,16 +1,34 @@
 abstract class Component {
-  constructor(public selector: string, public html: string) {}
+  static selector = "";
+
+  constructor(public html: string) {}
 }
 
 class AppComponent extends Component {
+  static selector = "app-root";
+
   constructor() {
     super(
-      "app-root",
       `<div>
-    <h1>Welcome</h1>
-    <p>{{time}}</p>
-    <button (click)="updateTime()">Update</button>
+    <h1>{{title}}</h1>
+    <clock></clock>
   </div>`
+    );
+  }
+
+  title = "Welcome to the Clock App";
+}
+
+type ComponentTree = {
+  componentInstance: Component;
+  children: ComponentTree[];
+};
+
+class ClockComponent extends Component {
+  static selector = "clock";
+  constructor() {
+    super(
+      `<div><p>{{time}}</p><button (click)="updateTime()">Update</button></div>`
     );
   }
 
@@ -18,16 +36,15 @@ class AppComponent extends Component {
 
   updateTime() {
     this.time = new Date().toLocaleTimeString();
-    console.log(this.time);
   }
 }
 
-const appComponent = new AppComponent();
 let currentBindingId = 1;
+type ComponentClass = { new (): Component };
 
-const registeredComponents = new Map<string, Component>([
-  ["app-component", new AppComponent()],
-]);
+const registeredComponents = new Map<string, ComponentClass>(
+  [AppComponent, ClockComponent].map((cls) => [cls.selector, cls])
+);
 
 function getBindingProperty<Comp extends Component>(
   expression: string,
@@ -104,12 +121,29 @@ function setEventBindings(component: Component, html: string) {
   return { bindingPerId, html };
 }
 
+function renderSubComponents(
+  component: Component,
+  dom: Element
+): ComponentTree[] {
+  const compontenTrees = [];
+  for (const [selector, componentClass] of registeredComponents.entries()) {
+    const subComponents = dom.getElementsByTagName(selector);
+
+    if (subComponents.length) {
+      const [subComponent] = subComponents;
+      compontenTrees.push(renderComponent(subComponent, componentClass));
+    }
+  }
+
+  return compontenTrees;
+}
+
 function applyEventBindings(
   bindingPerId: Map<number, keyof Component>,
   component: Component
 ) {
   bindingPerId.forEach((handler, id) => {
-    const dom = document.getElementById(`ng-${id}`) as HTMLElement;
+    const dom = document.getElementById(`ng-${id}`) as Element;
     const handlerFn = component[handler] as unknown as () => void;
     if (typeof handlerFn === "function") {
       dom.addEventListener("click", () => handlerFn.apply(component));
@@ -117,8 +151,11 @@ function applyEventBindings(
   });
 }
 
-window.addEventListener("load", () => {
-  const component: Component = appComponent;
+function renderComponent(
+  parentNode: Element,
+  componentClass: ComponentClass
+): ComponentTree {
+  const component = new componentClass();
   const { bindingPerId: propertyBindingPerId, html: propertyBoundHtml } =
     setPropertyBindings(component, component.html);
 
@@ -127,10 +164,19 @@ window.addEventListener("load", () => {
     propertyBoundHtml
   );
 
-  document.body.innerHTML = finalHtml;
+  parentNode.innerHTML = finalHtml;
   applyEventBindings(eventBindingPerId, component);
-
   const bindingMap = createBindingsMap(propertyBindingPerId);
 
-  console.log(bindingMap);
+  return {
+    componentInstance: component,
+    children: renderSubComponents(component, parentNode),
+  };
+}
+
+window.addEventListener("load", () => {
+  const div = document.createElement("div");
+  document.body.appendChild(div);
+  const componentTree = renderComponent(div, AppComponent);
+  console.log(componentTree);
 });
