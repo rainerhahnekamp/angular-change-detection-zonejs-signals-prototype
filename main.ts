@@ -178,11 +178,7 @@ function renderComponent(
   };
 }
 
-function runChangeDetection({
-  component,
-  bindingMap,
-  children,
-}: ComponentTree) {
+function detectChanges({ component, bindingMap, children }: ComponentTree) {
   for (const [propName, { dom, value }] of bindingMap.entries()) {
     if (value !== component[propName]) {
       dom.innerText = component[propName];
@@ -190,7 +186,7 @@ function runChangeDetection({
     }
   }
 
-  children.forEach(runChangeDetection);
+  children.forEach(detectChanges);
 }
 
 window.addEventListener("load", () => {
@@ -199,6 +195,6 @@ window.addEventListener("load", () => {
   const componentTree = renderComponent(div, AppComponent);
   notNullable(() => document.getElementById("btn-cd")).addEventListener(
     "click",
-    () => runChangeDetection(componentTree)
+    () => detectChanges(componentTree)
   );
 });
