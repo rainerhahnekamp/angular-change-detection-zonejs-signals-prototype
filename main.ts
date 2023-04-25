@@ -1,3 +1,82 @@
+interface Consumer<T> {
+  onValueChange(value: T): void;
+}
+
+interface Signal<T> {
+  (): T;
+  update(newValue: T): void;
+}
+
+let activeConsumer: Consumer<any> | undefined;
+
+function signal<T>(value: T): Signal<T> {
+  let internalValue = value;
+  const consumers = new Set<Consumer<T>>();
+
+  const notifyConsumers = () => {
+    for (const consumer of consumers) {
+      consumer.onValueChange(internalValue);
+    }
+  };
+
+  return Object.assign(
+    () => {
+      if (activeConsumer) {
+        consumers.add(activeConsumer);
+      }
+      return internalValue;
+    },
+    {
+      update(newValue: T) {
+        internalValue = newValue;
+        notifyConsumers();
+      },
+    }
+  );
+}
+
+const effect = function (effectFn: () => void): void {
+  const prevConsumer = activeConsumer;
+  activeConsumer = {
+    onValueChange(value: any) {
+      effectFn();
+    },
+  };
+  effectFn();
+  activeConsumer = prevConsumer;
+};
+
+class Computed<T> {
+  signal: Signal<T>;
+  constructor(private computedFn: () => T) {
+    const prevConsumer = activeConsumer;
+    activeConsumer = this;
+    this.signal = signal(this.computedFn());
+    activeConsumer = prevConsumer;
+  }
+
+  onValueChange(value: any) {
+    this.signal.update(this.computedFn());
+  }
+}
+
+const computed = function <T>(computedFn: () => T): Signal<T> {
+  return new Computed(computedFn).signal;
+};
+
+const number = signal(1);
+const episode = computed(() => {
+  return `Episode ${number()}`;
+});
+
+effect(() => console.log(`1st effect: ${number()}`));
+effect(() => console.log(`2nd effect: ${number()}`));
+effect(() => console.log(episode()));
+
+window.setInterval(() => {
+  number.update(number() + 1);
+}, 1000);
+
 abstract class Component {
   static selector = "";
 
@@ -31,14 +110,14 @@ class ClockComponent extends Component {
   static selector = "clock";
   constructor() {
     super(
-      `<div><p>{{time}}</p><button (click)="updateTime()">Update</button></div>`
+      `<div><p>{{time()}}</p><button (click)="updateTime()">Update</button></div>`
     );
   }
 
-  time = new Date().toLocaleTimeString();
+  time = signal(new Date().toLocaleTimeString());
 
   updateTime() {
-    this.time = new Date().toLocaleTimeString();
+    this.time.update(new Date().toLocaleTimeString());
   }
 }
 
@@ -60,7 +139,6 @@ function getBindingProperty<Comp extends Component>(
     throw new Error(`cannot find ${name} in ${component}`);
   }
 
-  // TODO: Why does this not work automatically
   return name as keyof Comp;
 }
 
@@ -210,7 +288,6 @@ function patchAddEventListener() {
 
 function bootstrapApplication() {
   window.addEventListener("load", () => {
-    patchAddEventListener();
     const div = document.createElement("div");
     document.body.appendChild(div);
     componentTree = renderComponent(div, AppComponent);
