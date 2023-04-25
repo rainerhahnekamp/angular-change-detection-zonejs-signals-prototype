@@ -43,6 +43,8 @@ class ClockComponent extends Component {
 }
 
 let currentBindingId = 1;
+let componentTree: ComponentTree | undefined;
+const getComponentTree = () => notNullable(() => componentTree);
 type ComponentClass = { new (): Component };
 
 const registeredComponents = new Map<string, ComponentClass>(
@@ -178,7 +180,8 @@ function renderComponent(
   };
 }
 
-function detectChanges({ component, bindingMap, children }: ComponentTree) {
+function detectChanges(componentTree: ComponentTree) {
+  const { bindingMap, children, component } = componentTree;
   for (const [propName, { dom, value }] of bindingMap.entries()) {
     if (value !== component[propName]) {
       dom.innerText = component[propName];
@@ -189,12 +192,33 @@ function detectChanges({ component, bindingMap, children }: ComponentTree) {
   children.forEach(detectChanges);
 }
 
-window.addEventListener("load", () => {
-  const div = document.createElement("div");
-  document.body.appendChild(div);
-  const componentTree = renderComponent(div, AppComponent);
-  notNullable(() => document.getElementById("btn-cd")).addEventListener(
-    "click",
-    () => detectChanges(componentTree)
-  );
-});
+function patchAddEventListener() {
+  const original = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function (
+    ...args: Parameters<typeof original>
+  ) {
+    const callback = args[1];
+    if (typeof callback === "function") {
+      args[1] = (event: Event) => {
+        callback(event);
+        detectChanges(getComponentTree());
+      };
+    }
+    return original.apply(this, args);
+  };
+}
+
+function bootstrapApplication() {
+  window.addEventListener("load", () => {
+    patchAddEventListener();
+    const div = document.createElement("div");
+    document.body.appendChild(div);
+    componentTree = renderComponent(div, AppComponent);
+    notNullable(() => document.getElementById("btn-cd")).addEventListener(
+      "click",
+      () => detectChanges(getComponentTree())
+    );
+  });
+}
+
+bootstrapApplication();
