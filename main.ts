@@ -19,8 +19,11 @@ class AppComponent extends Component {
   title = "Welcome to the Clock App";
 }
 
+type BindingMap = Map<keyof Component, { dom: HTMLSpanElement; value: string }>;
+
 type ComponentTree = {
-  componentInstance: Component;
+  component: Component;
+  bindingMap: BindingMap;
   children: ComponentTree[];
 };
 
@@ -89,15 +92,15 @@ function setPropertyBindings(component: Component, html: string) {
 
 function createBindingsMap(
   bindingPerId: Map<keyof Component, { id: number; value: string }>
-) {
-  const bindingMap = new Map<
+): BindingMap {
+  const bindingMap: BindingMap = new Map<
     keyof Component,
-    { dom: HTMLSpanElement; currentValue: string }
+    { dom: HTMLSpanElement; value: string }
   >();
   bindingPerId.forEach(({ id, value }, binding) => {
     bindingMap.set(binding, {
       dom: document.getElementById(`ng-${id}`) as HTMLSpanElement,
-      currentValue: value,
+      value,
     });
   });
   return bindingMap;
@@ -166,17 +169,36 @@ function renderComponent(
 
   parentNode.innerHTML = finalHtml;
   applyEventBindings(eventBindingPerId, component);
-  const bindingMap = createBindingsMap(propertyBindingPerId);
+  const bindingMap: BindingMap = createBindingsMap(propertyBindingPerId);
 
   return {
-    componentInstance: component,
+    component,
+    bindingMap,
     children: renderSubComponents(component, parentNode),
   };
+}
+
+function runChangeDetection({
+  component,
+  bindingMap,
+  children,
+}: ComponentTree) {
+  for (const [propName, { dom, value }] of bindingMap.entries()) {
+    if (value !== component[propName]) {
+      dom.innerText = component[propName];
+      bindingMap.set(propName, { dom, value: component[propName] });
+    }
+  }
+
+  children.forEach(runChangeDetection);
 }
 
 window.addEventListener("load", () => {
   const div = document.createElement("div");
   document.body.appendChild(div);
   const componentTree = renderComponent(div, AppComponent);
-  console.log(componentTree);
+  notNullable(() => document.getElementById("btn-cd")).addEventListener(
+    "click",
+    () => runChangeDetection(componentTree)
+  );
 });
