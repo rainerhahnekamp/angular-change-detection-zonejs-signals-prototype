@@ -4,7 +4,14 @@ interface Consumer<T> {
 
 interface Signal<T> {
   (): T;
+  isSignal: unknown;
   update(newValue: T): void;
+}
+
+const SIGNAL = Symbol("SIGNAL");
+
+function isSignal(potentialSignal: unknown): potentialSignal is Signal<string> {
+  return true;
 }
 
 let activeConsumer: Consumer<any> | undefined;
@@ -27,6 +34,7 @@ function signal<T>(value: T): Signal<T> {
       return internalValue;
     },
     {
+      isSignal: true,
       update(newValue: T) {
         internalValue = newValue;
         notifyConsumers();
@@ -64,19 +72,6 @@ const computed = function <T>(computedFn: () => T): Signal<T> {
   return new Computed(computedFn).signal;
 };
 
-const number = signal(1);
-const episode = computed(() => {
-  return `Episode ${number()}`;
-});
-
-effect(() => console.log(`1st effect: ${number()}`));
-effect(() => console.log(`2nd effect: ${number()}`));
-effect(() => console.log(episode()));
-
-window.setInterval(() => {
-  number.update(number() + 1);
-}, 1000);
-
 abstract class Component {
   static selector = "";
 
@@ -89,13 +84,13 @@ class AppComponent extends Component {
   constructor() {
     super(
       `<div>
-    <h1>{{title}}</h1>
+    <h1>{{title()}}</h1>
     <clock></clock>
   </div>`
     );
   }
 
-  title = "Welcome to the Clock App";
+  title = signal("Welcome to the Clock App");
 }
 
 type BindingMap = Map<keyof Component, { dom: HTMLSpanElement; value: string }>;
@@ -134,7 +129,7 @@ function getBindingProperty<Comp extends Component>(
   expression: string,
   component: Comp
 ): keyof Comp {
-  const name = expression.substring(2, expression.length - 2);
+  const name = expression.substring(2, expression.length - 4);
   if (!(name in component)) {
     throw new Error(`cannot find ${name} in ${component}`);
   }
@@ -155,16 +150,21 @@ function setPropertyBindings(component: Component, html: string) {
     keyof Component,
     { id: number; value: string }
   >();
-  const bindings = html.match(/{{[a-z-]+}}/g) || [];
+  const bindings = html.match(/{{[a-z-]+\(\)}}/g) || [];
   for (const binding of bindings) {
     const name = getBindingProperty(binding, component);
-    const value = component[name];
+    const signal = component[name];
+    if (!isSignal(signal)) {
+      throw new Error("only signals");
+    }
+    const value = signal();
     bindingPerId.set(name, {
       id: currentBindingId,
       value,
     });
     const placeholderTag = `<span id="ng-${currentBindingId}">${value}</span>`;
     html = html.replace(binding, placeholderTag);
+    console.log(html);
     currentBindingId++;
   }
   return { bindingPerId, html };
@@ -251,39 +251,45 @@ function renderComponent(
   applyEventBindings(eventBindingPerId, component);
   const bindingMap: BindingMap = createBindingsMap(propertyBindingPerId);
 
-  return {
+  const componentTree = {
     component,
     bindingMap,
     children: renderSubComponents(component, parentNode),
   };
+
+  for (const [propName, { dom, value }] of componentTree.bindingMap.entries()) {
+    const signal = component[propName];
+    if (!isSignal(signal)) {
+      throw new Error("only signals");
+    }
+    let firstRun = true;
+    effect(() => {
+      signal();
+      if (firstRun) {
+        firstRun = false;
+        return;
+      }
+      detectChanges(componentTree);
+    });
+  }
+
+  return componentTree;
 }
 
 function detectChanges(componentTree: ComponentTree) {
   const { bindingMap, children, component } = componentTree;
   for (const [propName, { dom, value }] of bindingMap.entries()) {
-    if (value !== component[propName]) {
-      dom.innerText = component[propName];
-      bindingMap.set(propName, { dom, value: component[propName] });
+    const signal = component[propName];
+    if (!isSignal(signal)) {
+      throw new Error("only signals");
+    }
+    const newValue = signal();
+
+    if (value !== newValue) {
+      dom.innerText = newValue;
+      bindingMap.set(propName, { dom, value: newValue });
     }
   }
-
-  children.forEach(detectChanges);
-}
-
-function patchAddEventListener() {
-  const original = EventTarget.prototype.addEventListener;
-  EventTarget.prototype.addEventListener = function (
-    ...args: Parameters<typeof original>
-  ) {
-    const callback = args[1];
-    if (typeof callback === "function") {
-      args[1] = (event: Event) => {
-        callback(event);
-        detectChanges(getComponentTree());
-      };
-    }
-    return original.apply(this, args);
-  };
 }
 
 function bootstrapApplication() {
@@ -291,10 +297,6 @@ function bootstrapApplication() {
     const div = document.createElement("div");
     document.body.appendChild(div);
     componentTree = renderComponent(div, AppComponent);
-    notNullable(() => document.getElementById("btn-cd")).addEventListener(
-      "click",
-      () => detectChanges(getComponentTree())
-    );
   });
 }
 
