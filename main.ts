@@ -103,16 +103,16 @@ type ComponentTree = {
 
 class ClockComponent extends Component {
   static selector = "clock";
+  #time = signal(new Date());
+  time = computed(() => this.#time().toLocaleTimeString());
   constructor() {
     super(
       `<div><p>{{time()}}</p><button (click)="updateTime()">Update</button></div>`
     );
   }
 
-  time = signal(new Date().toLocaleTimeString());
-
   updateTime() {
-    this.time.update(new Date().toLocaleTimeString());
+    this.#time.update(new Date());
   }
 }
 
@@ -164,7 +164,6 @@ function setPropertyBindings(component: Component, html: string) {
     });
     const placeholderTag = `<span id="ng-${currentBindingId}">${value}</span>`;
     html = html.replace(binding, placeholderTag);
-    console.log(html);
     currentBindingId++;
   }
   return { bindingPerId, html };
