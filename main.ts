@@ -1,20 +1,27 @@
-// Framework Code
-
 abstract class AbstractComponent {
   static selector = "";
   static imports: ComponentClass<AbstractComponent>[] = [];
   constructor(public html: string) {}
 }
 
-// Rest des Framework Codes
 type ComponentClass<Component extends AbstractComponent> = {
   new (): Component;
   selector: string;
   imports: ComponentClass<AbstractComponent>[];
 };
 
-// ## Property Binding
-let currentBindingId = 0;
+type ComponentTree<Component extends AbstractComponent> = {
+  component: Component;
+  children: ComponentTree<AbstractComponent>[];
+};
+
+function bootstrapApplication<Component extends AbstractComponent>(
+  appComponentClass: ComponentClass<Component>
+) {
+  window.addEventListener("load", () => {
+    renderComponent(document.body, appComponentClass);
+  });
+}
 
 function assertKeyOf<Component extends AbstractComponent>(
   property: string | number | symbol,
@@ -24,6 +31,8 @@ function assertKeyOf<Component extends AbstractComponent>(
     throw new Error(`${String(property)} is not a property of ${component}`);
   }
 }
+
+let currentBindingId = 1;
 
 function setPropertyBindings<Component extends AbstractComponent>(
   component: Component,
@@ -58,7 +67,6 @@ function setEventBindings<Component extends AbstractComponent>(
     html = html.replace(binding, `id="ng-${currentBindingId}"`);
     bindingPerId.set(currentBindingId, name);
   }
-
   return { bindingPerId, html };
 }
 
@@ -74,11 +82,6 @@ function applyEventBindings<Component extends AbstractComponent>(
     }
   });
 }
-
-type ComponentTree<Component extends AbstractComponent> = {
-  component: Component;
-  children: ComponentTree<AbstractComponent>[];
-};
 
 function renderComponent<Component extends AbstractComponent>(
   parentNode: Element,
@@ -122,15 +125,6 @@ function renderSubComponents<Component extends AbstractComponent>(
   return compontentTrees;
 }
 
-function bootstrapApplication<Component extends AbstractComponent>(
-  appComponentClass: ComponentClass<Component>
-) {
-  window.addEventListener("load", () => {
-    renderComponent(document.body, appComponentClass);
-  });
-}
-
-// Application Code
 class ClockComponent extends AbstractComponent {
   static selector = "clock";
   constructor() {
@@ -152,9 +146,9 @@ class AppComponent extends AbstractComponent {
   constructor() {
     super(
       `<div>
-    <h1>{{title}}</h1>
-    <clock></clock>
-  </div>`
+      <h1>{{title}}</h1>
+      <clock></clock>
+    </div>`
     );
   }
 
